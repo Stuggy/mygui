@@ -20,8 +20,8 @@
 #include <Compositor/Pass/PassScene/OgreCompositorPassSceneDef.h>
 #include <Compositor/Pass/PassClear/OgreCompositorPassClearDef.h>
 #include <Compositor/OgreCompositorWorkspaceDef.h>
-#include <Hlms/Unlit/OgreHlmsUnlit.h>
-#include <Hlms/Pbs/OgreHlmsPbs.h>
+#include <Hlms/Unlit/include/OgreHlmsUnlit.h>
+#include <Hlms/Pbs/include/OgreHlmsPbs.h>
 #include <OgreHlmsManager.h>
 #include <OgreFrameStats.h>
 
@@ -141,7 +141,7 @@ namespace base
 		light->setDirection(vec);
 
 		// Load resources
-		Ogre::ResourceGroupManager::getSingleton().initialiseAllResourceGroups();
+		Ogre::ResourceGroupManager::getSingleton().initialiseAllResourceGroups(true);
 
 		mRoot->addFrameListener(this);
 		Ogre::WindowEventUtilities::addWindowEventListener(mWindow, this);
@@ -202,7 +202,7 @@ namespace base
 		// очищаем сцену
 		if (mSceneManager)
 		{
-			mSceneManager->clearScene();
+			mSceneManager->clearScene(true);
 			mSceneManager->destroyAllCameras();
 			mSceneManager = nullptr;
 			mCamera = nullptr;
@@ -382,23 +382,32 @@ namespace base
 
 	void BaseManager::registerHlms()
 	{
-		Ogre::String shaderSyntax = "/GLSL";
-		if (mRoot->getRenderSystem()->getName() == "Direct3D11 Rendering Subsystem")
-			shaderSyntax = "/HLSL";
+		std::string dataFolder = getRootMedia() + "/OgreHlms/";
 
-		Ogre::Archive *archiveCommon = Ogre::ArchiveManager::getSingletonPtr()->load(
-			getRootMedia() + "/OgreHlms" + "/Common" + shaderSyntax,
-			"FileSystem", true);
+		Ogre::ArchiveManager &archiveManager = Ogre::ArchiveManager::getSingleton();
+		Ogre::StringVector::const_iterator libraryFolderPathIt;
+		Ogre::StringVector::const_iterator libraryFolderPathEn;
+		{
+			Ogre::String unlitMainFolder;
+			Ogre::StringVector unlitLibraryFoldersPaths;
+			Ogre::HlmsUnlit::getDefaultPaths(unlitMainFolder, unlitLibraryFoldersPaths);
+			Ogre::Archive *archiveUnlit = archiveManager.load(dataFolder + unlitMainFolder,
+				"FileSystem", true);
+			Ogre::ArchiveVec archiveUnlitLibraryFolders;
+			libraryFolderPathIt = unlitLibraryFoldersPaths.begin();
+			libraryFolderPathEn = unlitLibraryFoldersPaths.end();
+			while (libraryFolderPathIt != libraryFolderPathEn)
+			{
+				Ogre::Archive *archiveLibrary =
+					archiveManager.load(dataFolder + *libraryFolderPathIt, "FileSystem", true);
+				archiveUnlitLibraryFolders.push_back(archiveLibrary);
+				++libraryFolderPathIt;
+			}
+			//Create and register the unlit Hlms
+			Ogre::HlmsUnlit *hlmsUnlit = OGRE_NEW Ogre::HlmsUnlit(archiveUnlit, &archiveUnlitLibraryFolders);
+			Ogre::Root::getSingleton().getHlmsManager()->registerHlms(hlmsUnlit);
+		}
 
-		Ogre::ArchiveVec libraryCommon;
-		libraryCommon.push_back(archiveCommon);
-
-		Ogre::Archive *archiveUnlit = Ogre::ArchiveManager::getSingletonPtr()->load(
-			getRootMedia() + "/OgreHlms" + "/Unlit" + shaderSyntax,
-			"FileSystem", true);
-
-		Ogre::HlmsUnlit *hlmsUnlit = OGRE_NEW Ogre::HlmsUnlit(archiveUnlit, &libraryCommon);
-		Ogre::Root::getSingleton().getHlmsManager()->registerHlms(hlmsUnlit);
 	}
 
 	bool BaseManager::frameStarted(const Ogre::FrameEvent& evt)
